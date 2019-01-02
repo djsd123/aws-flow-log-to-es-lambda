@@ -16,7 +16,7 @@ LOG.setLevel(os.environ.get('LOG_LEVEL', 'DEBUG'))
 creds = os.environ['ES_USERNAME'] + ':' + os.environ['ES_PASSWORD']
 
 es = Elasticsearch(
-    host=os.environ['ES_DOMAIN'],
+    host=os.environ['ES_HOST'],
     port=os.environ['ES_PORT'],
     http_auth=creds,
     use_ssl=True,
@@ -44,24 +44,26 @@ def lambda_handler(event, context):
         body = gzip.decompress(obj['Body'].read())
         lines = body.decode('UTF-8').splitlines()
 
-        # Post logs as JSON to elasticsearch
+        # Post logs to elasticsearch
         elasticsearch.helpers.bulk(es, log_data(lines), index=index)
 
 
 # Convert each log line to JSON
 def log_data(lines):
+    # Skip heading line in log file
     for line in islice(lines, 1, None):
 
-        # Marshal log event to JSON and strip python metadata
-        document = jsonpickle.encode(FlowRecord.from_message(line), unpicklable=False)
+        # Convert log line to dictionary/slot
+        line_dict = FlowRecord.from_message(line)
 
-        LOG.debug('Posting to elasticsearch: {}'.format(document))
+        # Marshal log event to JSON and strip python metadata
+        document = jsonpickle.encode(line_dict, unpicklable=False)
 
         yield {
             '_op_type': 'index',
             '_index': elasticsearch_index(index),
             '_type': index_type,
-            'timestamp': datetime.datetime.utcnow(),
+            'timestamp': line_dict.start,
             '_source': document,
         }
 
